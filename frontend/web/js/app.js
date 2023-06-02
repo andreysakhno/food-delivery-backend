@@ -448,6 +448,7 @@
             this.id = product.id;
             this.shopId = product.shop?.id;
             this.shopTitle = product.shop?.title;
+            this.shopCoords = product.shop?.coords;
             this.title = product.title;
             this.price = product.price.toFixed(2);
             this.src = product.photo?.src;
@@ -562,6 +563,19 @@
         clear() {
             localStorage.removeItem("cart");
         }
+        getShops() {
+            const shops = [];
+            this.products.forEach((product => {
+                let isIncludes = shops.some((item => item.shopId === product.shopId));
+                if (isIncludes) return;
+                shops.push({
+                    shopId: product.shopId,
+                    shopTitle: product.shopTitle,
+                    shopCoords: product.shopCoords
+                });
+            }));
+            return shops;
+        }
         _save() {
             localStorage.setItem("cart", JSON.stringify(this.products));
             if (this._isEmpty()) this.clear();
@@ -670,65 +684,230 @@
             if (!this._container.children.length) this._container.parentNode.removeChild(this._container);
         }
     }
+    class Loader {
+        constructor(apiKey = null, options = {}) {
+            this.apiKey = apiKey;
+            this.options = options;
+            if (typeof window === "undefined") throw new Error("google-maps is supported only in browser environment");
+        }
+        load() {
+            if (typeof this.api !== "undefined") return Promise.resolve(this.api);
+            if (typeof this.loader !== "undefined") return this.loader;
+            window[Loader.CALLBACK_NAME] = () => {
+                this.api = window["google"];
+                if (typeof this.resolve === "undefined") throw new Error("Should not happen");
+                this.resolve(this.api);
+            };
+            window["gm_authFailure"] = () => {
+                if (typeof this.reject === "undefined") throw new Error("Should not happen");
+                this.reject(new Error("google-maps: authentication error"));
+            };
+            return this.loader = new Promise(((resolve, reject) => {
+                this.resolve = resolve;
+                this.reject = reject;
+                const script = document.createElement("script");
+                script.src = this.createUrl();
+                script.async = true;
+                script.onerror = e => reject(e);
+                document.head.appendChild(script);
+            }));
+        }
+        createUrl() {
+            const parameters = [ `callback=${Loader.CALLBACK_NAME}` ];
+            if (this.apiKey) parameters.push(`key=${this.apiKey}`);
+            for (let name in this.options) if (this.options.hasOwnProperty(name)) {
+                let value = this.options[name];
+                if (name === "version") name = "v";
+                if (name === "libraries") value = value.join(",");
+                parameters.push(`${name}=${value}`);
+            }
+            return `https://maps.googleapis.com/maps/api/js?${parameters.join("&")}`;
+        }
+    }
+    Loader.CALLBACK_NAME = "_dk_google_maps_loader_cb";
+    class Map {
+        #google;
+        #map;
+        #mainMarker;
+        #autocomplete;
+        #input;
+        #mapCnt;
+        #markers;
+        static get _CONFIGURATION() {
+            return {
+                ctaTitle: "Checkout",
+                mapOptions: {
+                    center: {
+                        lat: 50.44813845420719,
+                        lng: 30.523545411355187
+                    },
+                    fullscreenControl: true,
+                    mapTypeControl: false,
+                    streetViewControl: true,
+                    zoom: 11,
+                    zoomControl: true,
+                    maxZoom: 22,
+                    mapId: ""
+                },
+                mapsApiKey: "AIzaSyBgqOn618wGMaPpY2uZC3ODrMuUQ2he9R8",
+                capabilities: {
+                    addressAutocompleteControl: true,
+                    mapDisplayControl: true,
+                    ctaControl: false
+                }
+            };
+        }
+        constructor(google, map, mainMarker, autocomplete, mapCnt, input) {
+            this.#google = google;
+            this.#map = map;
+            this.#mainMarker = mainMarker;
+            this.#autocomplete = autocomplete;
+            this.#mapCnt = mapCnt;
+            this.#input = input;
+            this.#markers = [];
+            this._handlers();
+        }
+        static async initialize(mapContainer, autocompleteInput) {
+            const options = {
+                libraries: [ "places" ]
+            };
+            const loader = new Loader(Map._CONFIGURATION.mapsApiKey, options);
+            const google = await loader.load();
+            const map = new google.maps.Map(mapContainer, {
+                zoom: Map._CONFIGURATION.mapOptions.zoom,
+                center: {
+                    lat: Map._CONFIGURATION.mapOptions.center.lat,
+                    lng: Map._CONFIGURATION.mapOptions.center.lng
+                },
+                mapTypeControl: false,
+                fullscreenControl: Map._CONFIGURATION.mapOptions.fullscreenControl,
+                zoomControl: Map._CONFIGURATION.mapOptions.zoomControl,
+                streetViewControl: Map._CONFIGURATION.mapOptions.streetViewControl
+            });
+            const marker = new google.maps.Marker({
+                map,
+                draggable: false
+            });
+            const autocomplete = new google.maps.places.Autocomplete(autocompleteInput, {});
+            return new Map(google, map, marker, autocomplete, mapContainer, autocompleteInput);
+        }
+        addMarkers(elements) {
+            elements.forEach(((element, index) => {
+                let [Lat, Lng] = element.shopCoords.split(";");
+                const marker = new this.#google.maps.Marker({
+                    map: this.#map,
+                    position: {
+                        lat: +Lat,
+                        lng: +Lng
+                    },
+                    title: element.shopTitle,
+                    label: `${index + 1}`
+                });
+                marker.setVisible(true);
+                this.#markers.push(marker);
+            }));
+        }
+        removeMarkers() {
+            this.#markers.forEach((item => {
+                item.setMap(null);
+            }));
+        }
+        _handlers() {
+            this.#autocomplete.addListener("place_changed", (() => {
+                this.#mainMarker.setVisible(false);
+                const place = this.#autocomplete.getPlace();
+                if (!place.geometry) {
+                    window.alert("No details available for input: '" + place.name + "'");
+                    return;
+                }
+                this._pinMarker(place.geometry.location);
+            }));
+            const geocoder = new this.#google.maps.Geocoder;
+            this.#google.maps.event.addListener(this.#map, "click", (event => {
+                this.#mainMarker.setVisible(false);
+                const location = event.latLng;
+                geocoder.geocode({
+                    latLng: location
+                }, ((results, status) => {
+                    if (status == this.#google.maps.GeocoderStatus.OK) if (results[0]) {
+                        this._pinMarker(location);
+                        this.#input.value = results[0].formatted_address;
+                    }
+                }));
+            }));
+        }
+        _pinMarker(location) {
+            this.#map.setCenter(location);
+            this.#mainMarker.setPosition(location);
+            this.#mainMarker.setVisible(true);
+        }
+    }
     function initCart() {
         const orderContainer = document.querySelector(".form-order__list");
         const totalSum = document.querySelector(".form-submit_sum-value");
         const cartIcon = document.querySelector(".header__cart");
-        if (localStorage.getItem("cart") !== null) {
-            const productsInCart = JSON.parse(localStorage.getItem("cart"));
-            cartIcon.textContent = productsInCart.length;
-        }
-        const cart = new Cart;
-        if (Object.keys(cart.products).length === 0) {
-            orderContainer.textContent = "Корзина порожня";
-            totalSum.textContent = (0).toFixed(2);
-        } else for (const key in cart.products) {
-            orderContainer.append(renderProduct(cart.products[key]));
-            totalSum.textContent = cart.getTotalSum().toFixed(2);
-        }
-        orderContainer.addEventListener("click", (e => {
-            const el = e.target;
-            const cardClass = ".primary-card-gorizontal";
-            const closestCard = el.closest(cardClass);
-            const productId = +closestCard.dataset.productId;
-            const priceValue = closestCard.querySelectorAll(cardClass + "__price-value")[1];
-            if (el.closest(cardClass + "__remove-btn")) {
-                cart.remove(productId);
-                closestCard.remove();
-                totalSum.textContent = cart.getTotalSum().toFixed(2);
-                cartIcon.textContent = cartIcon.textContent - 1;
-                if (orderContainer.childNodes.length === 0) {
-                    orderContainer.textContent = "Корзина порожня";
-                    cartIcon.textContent = "";
+        const adressInput = document.getElementById("adress");
+        const mapContainer = document.getElementById("map");
+        Map.initialize(mapContainer, adressInput).then((map => {
+            const cart = new Cart;
+            if (Object.keys(cart.products).length === 0) {
+                orderContainer.textContent = "Корзина порожня";
+                totalSum.textContent = (0).toFixed(2);
+                cartIcon.textContent = "";
+            } else {
+                cartIcon.textContent = cart.products.length;
+                map.addMarkers(cart.getShops());
+                for (const key in cart.products) {
+                    orderContainer.append(renderProduct(cart.products[key]));
+                    totalSum.textContent = cart.getTotalSum().toFixed(2);
                 }
             }
-            if (el.closest(".quantity__button_plus")) {
-                cart.increaseQuantiti(productId);
-                priceValue.textContent = cart.getItemSum(productId).toFixed(2);
-                totalSum.textContent = cart.getTotalSum().toFixed(2);
-            }
-            if (el.closest(".quantity__button_minus")) {
-                cart.decreaseQuantity(productId);
-                priceValue.textContent = cart.getItemSum(productId).toFixed(2);
-                totalSum.textContent = cart.getTotalSum().toFixed(2);
-            }
-        }));
-        document.addEventListener("formSent", (e => {
-            if (Object.keys(cart.products).length !== 0) {
-                const requestData = {
-                    name: document.getElementById("name").value,
-                    email: document.getElementById("email").value,
-                    phone: document.getElementById("phone").value,
-                    adress: document.getElementById("adress").value,
-                    products: cart.products
-                };
-                cart.clear();
-                orderContainer.textContent = "Корзина пуста";
-                cartIcon.textContent = "";
-                postData("orders", requestData).then((() => {
-                    FlashMessage.success("Замовлення відправлено!!!");
-                }));
-            }
+            orderContainer.addEventListener("click", (e => {
+                const el = e.target;
+                const cardClass = ".primary-card-gorizontal";
+                const closestCard = el.closest(cardClass);
+                const productId = +closestCard.dataset.productId;
+                const priceValue = closestCard.querySelectorAll(cardClass + "__price-value")[1];
+                if (el.closest(cardClass + "__remove-btn")) {
+                    map.removeMarkers();
+                    cart.remove(productId);
+                    map.addMarkers(cart.getShops());
+                    closestCard.remove();
+                    totalSum.textContent = cart.getTotalSum().toFixed(2);
+                    cartIcon.textContent = cartIcon.textContent - 1;
+                    if (orderContainer.childNodes.length === 0) {
+                        orderContainer.textContent = "Корзина порожня";
+                        cartIcon.textContent = "";
+                    }
+                }
+                if (el.closest(".quantity__button_plus")) {
+                    cart.increaseQuantiti(productId);
+                    priceValue.textContent = cart.getItemSum(productId).toFixed(2);
+                    totalSum.textContent = cart.getTotalSum().toFixed(2);
+                }
+                if (el.closest(".quantity__button_minus")) {
+                    cart.decreaseQuantity(productId);
+                    priceValue.textContent = cart.getItemSum(productId).toFixed(2);
+                    totalSum.textContent = cart.getTotalSum().toFixed(2);
+                }
+            }));
+            document.addEventListener("formSent", (e => {
+                if (Object.keys(cart.products).length !== 0) {
+                    const requestData = {
+                        name: document.getElementById("name").value,
+                        email: document.getElementById("email").value,
+                        phone: document.getElementById("phone").value,
+                        adress: document.getElementById("adress").value,
+                        products: cart.products
+                    };
+                    cart.clear();
+                    orderContainer.textContent = "Корзина пуста";
+                    cartIcon.textContent = "";
+                    postData("orders", requestData).then((() => {
+                        FlashMessage.success("Замовлення відправлено!!!");
+                    }));
+                }
+            }));
         }));
     }
     function renderProduct(product) {

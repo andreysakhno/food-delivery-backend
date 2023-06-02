@@ -112,11 +112,11 @@ class OrderController extends Controller
            try {
                $this->service->create($form);
                Yii::$app->getResponse()->setStatusCode(201);
+               return json_encode(['status' =>'OK']);
            } catch (\DomainException $e) {
                throw new BadRequestHttpException($e->getMessage(), null, $e);
            }
         }
-
     }
 
     public function serializeItem(Order $order): array
