@@ -1,7 +1,7 @@
 <?php
 /** @var yii\web\View $this */
 
-$this->title = '';
+$this->title = 'Магазин';
 
 $this->registerMetaTag(['name' =>'description', 'content' => ""]);
 $this->registerMetaTag(['name' =>'keywords', 'content' => ""]);

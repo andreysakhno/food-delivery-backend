@@ -228,7 +228,7 @@
             }), 0);
         },
         emailTest(formRequiredItem) {
-            return !/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,8})+$/.test(formRequiredItem.value);
+            return !/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,8})+$/.test(formRequiredItem.value.trim());
         }
     };
     function formSubmit() {
@@ -319,6 +319,10 @@
     async function getData(endpoint, params = {}) {
         const url = new URL(baseUrl + endpoint);
         if (params.hasOwnProperty("shopIds")) url.searchParams.append("shopIds", params.shopIds.toString());
+        if (params.hasOwnProperty("email") && params.hasOwnProperty("phone")) {
+            url.searchParams.append("email", params.email);
+            url.searchParams.append("phone", params.phone);
+        }
         try {
             const response = await fetch(url);
             if (!response.ok) {
@@ -407,9 +411,15 @@
         }
         return productImageDiv;
     }
-    function renderPriceInfo(price, selector) {
+    function renderPriceInfo(price, selector, title = null) {
         const divCardPrice = document.createElement("div");
         divCardPrice.classList = `${selector}__price`;
+        if (title) {
+            const spanPriceTitle = document.createElement("span");
+            spanPriceTitle.classList = `${selector}__price-title`;
+            spanPriceTitle.textContent = `${title}:`;
+            divCardPrice.append(spanPriceTitle);
+        }
         const spanPriceValue = document.createElement("span");
         spanPriceValue.classList = `${selector}__price-value`;
         spanPriceValue.textContent = (+price).toFixed(2);
@@ -419,6 +429,19 @@
         spanPriceCurrency.textContent = "грн.";
         divCardPrice.append(spanPriceCurrency);
         return divCardPrice;
+    }
+    function renderClientInfo(lable, value) {
+        const li = document.createElement("li");
+        li.classList = "orders__client-info-item";
+        const divLable = document.createElement("div");
+        divLable.classList = "orders__client-info-lable";
+        divLable.textContent = `${lable}:`;
+        li.append(divLable);
+        const divValue = document.createElement("div");
+        divValue.classList = "orders__client-info-value";
+        divValue.textContent = `${value}:`;
+        li.append(divValue);
+        return li;
     }
     class Product {
         constructor(product) {
@@ -657,7 +680,7 @@
         }
         const cart = new Cart;
         if (Object.keys(cart.products).length === 0) {
-            orderContainer.textContent = "Корзина пуста";
+            orderContainer.textContent = "Корзина порожня";
             totalSum.textContent = (0).toFixed(2);
         } else for (const key in cart.products) {
             orderContainer.append(renderProduct(cart.products[key]));
@@ -675,7 +698,7 @@
                 totalSum.textContent = cart.getTotalSum().toFixed(2);
                 cartIcon.textContent = cartIcon.textContent - 1;
                 if (orderContainer.childNodes.length === 0) {
-                    orderContainer.textContent = "Корзина пуста";
+                    orderContainer.textContent = "Корзина порожня";
                     cartIcon.textContent = "";
                 }
             }
@@ -702,7 +725,7 @@
                 cart.clear();
                 orderContainer.textContent = "Корзина пуста";
                 cartIcon.textContent = "";
-                postData("order", requestData).then((() => {
+                postData("orders", requestData).then((() => {
                     FlashMessage.success("Замовлення відправлено!!!");
                 }));
             }
@@ -763,8 +786,108 @@
         divRemove.append(buttonRemove);
         return productCard;
     }
+    function initHistory() {
+        const requestParams = {};
+        const emailInput = document.getElementById("email");
+        const phoneInput = document.getElementById("phone");
+        const ordersContainer = document.querySelector(".orders");
+        emailInput.addEventListener("keypress", (e => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                clearContainer(".orders");
+                phoneInput.value = "";
+                const element = e.target;
+                const email = element.value.trim();
+                if (formValidate.emailTest(element)) formValidate.addError(element); else {
+                    formValidate.removeError(element);
+                    requestParams.email = email;
+                    requestParams.phone = "";
+                    getData("orders", requestParams).then((data => {
+                        data.forEach((item => ordersContainer.append(renderOrder(item))));
+                    }));
+                }
+            }
+        }));
+        phoneInput.addEventListener("keypress", (e => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                clearContainer(".orders");
+                emailInput.value = "";
+                const element = e.target;
+                const phone = element.value.trim();
+                requestParams.email = "";
+                requestParams.phone = phone;
+                getData("orders", requestParams).then((data => {
+                    clearContainer(".orders");
+                    data.forEach((item => ordersContainer.append(renderOrder(item))));
+                }));
+            }
+        }));
+    }
+    function renderOrder(order) {
+        const orderCard = document.createElement("div");
+        orderCard.classList = "orders__item";
+        const divInfo = document.createElement("div");
+        divInfo.classList = "orders__info";
+        orderCard.append(divInfo);
+        const ulClientInfo = document.createElement("ul");
+        ulClientInfo.classList = "orders__client-info";
+        divInfo.append(ulClientInfo);
+        ulClientInfo.append(renderClientInfo("Ім'я", order.client_name));
+        ulClientInfo.append(renderClientInfo("E-mail", order.email));
+        ulClientInfo.append(renderClientInfo("Телефон", order.phone));
+        ulClientInfo.append(renderClientInfo("Алреса", order.adress));
+        const status = document.createElement("div");
+        status.classList = "orders__status";
+        divInfo.append(status);
+        const statusLable = document.createElement("div");
+        statusLable.classList = "orders__status-lable";
+        if (+order.status.id === 1) statusLable.classList.add("done"); else statusLable.classList.add("process");
+        statusLable.textContent = order.status.name;
+        status.append(statusLable);
+        const totalSum = order.products.reduce(((acc, item) => acc + item.quantity * item.price), 0);
+        divInfo.append(renderPriceInfo(totalSum, "primary-card-gorizontal", "Сума замовлення"));
+        const productList = document.createElement("div");
+        productList.classList = "orders__products-list";
+        orderCard.append(productList);
+        order.products.forEach((item => {
+            productList.append(renderOrderProduct(item));
+        }));
+        return orderCard;
+    }
+    function renderOrderProduct(product) {
+        const productCard = document.createElement("div");
+        productCard.classList = "orders__product primary-card-gorizontal";
+        productCard.append(renderPicture(product, "primary-card-gorizontal"));
+        const divBody = document.createElement("div");
+        divBody.classList = "primary-card-gorizontal__body";
+        productCard.append(divBody);
+        const divInfo = document.createElement("div");
+        divInfo.classList = "primary-card-gorizontal__info";
+        divBody.append(divInfo);
+        const h4Title = document.createElement("h4");
+        h4Title.classList = "primary-card-gorizontal__title";
+        h4Title.textContent = `${product.title} (${product.shopTitle})`;
+        divInfo.append(h4Title);
+        divInfo.append(renderPriceInfo(product.price, "primary-card-gorizontal", "Ціна"));
+        const divQuantity = document.createElement("div");
+        divQuantity.classList = "primary-card-gorizontal__quantity";
+        divInfo.append(divQuantity);
+        const quantityTitle = document.createElement("span");
+        quantityTitle.classList = "primary-card-gorizontal__quantity-title";
+        quantityTitle.textContent = "Кількість:";
+        divQuantity.append(quantityTitle);
+        const quantityValue = document.createElement("span");
+        quantityValue.classList = "primary-card-gorizontal__quantity-value";
+        quantityValue.textContent = product.quantity;
+        divQuantity.append(quantityValue);
+        const totalPrice = product.price * product.quantity;
+        divInfo.append(renderPriceInfo(totalPrice, "primary-card-gorizontal", "Разом"));
+        return productCard;
+    }
     if (document.getElementById("shop-page")) initShop();
     if (document.getElementById("cart-page")) initCart();
+    if (document.getElementById("history-page")) initHistory();
     window["FLS"] = true;
     isWebp();
     menuInit();

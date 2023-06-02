@@ -45,4 +45,8 @@ class SiteController extends Controller
     {
         return $this->render('cart');
     }
+    public function actionHistory()
+    {
+        return $this->render('history');
+    }
 }

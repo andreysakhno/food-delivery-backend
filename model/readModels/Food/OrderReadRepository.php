@@ -15,4 +15,9 @@ class OrderReadRepository
     {
         return Order::find()->limit($limit)->all();
     }
+
+    public function getByEmailOrPhone($email, $phone, $limit = null): array
+    {
+        return Order::find()->where(['or', ['email' => $email], ['phone' => $phone]])->limit($limit)->all();
+    }
 }

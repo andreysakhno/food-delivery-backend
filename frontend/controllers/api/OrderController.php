@@ -2,8 +2,8 @@
 
 namespace frontend\controllers\api;
 
-use DomainException;
 use model\entities\Food\Order;
+use model\helpers\ProcessHelper;
 use model\forms\manage\Food\OrderForm;
 use model\readModels\Food\OrderReadRepository;
 use model\services\manage\Food\OrderManageService;
@@ -34,7 +34,8 @@ class OrderController extends Controller
     protected function verbs(): array
     {
         return [
-            'index' => ['POST'],
+            'create' => ['POST'],
+            'index' => ['GET'],
         ];
     }
 
@@ -74,38 +75,63 @@ class OrderController extends Controller
         ];
     }
 
-
     public function actionIndex()
+    {
+        $email = Yii::$app->request->get('email');
+        $phone = Yii::$app->request->get('phone');
+
+        if (empty($email) && empty($phone)) {
+            $orders = $this->orders->getAll();
+        } else {
+            $email = strtolower($email);
+            $phone = strtolower($phone);
+            $orders = $this->orders->getByEmailOrPhone($email, $phone);
+        }
+
+        $result = [];
+        foreach ($orders as $item) {
+            $arr = $this->serializeItem($item);
+            array_push($result, $arr);
+        }
+        return $result;
+    }
+
+    public function actionCreate()
     {
         $request = Yii::$app->request->getRawBody();
         $requestData = json_decode($request);
 
-
-
-
         $name = $requestData->name;
-        $email = $requestData->email;
+        $email = strtolower($requestData->email);
         $phone = $requestData->phone;
         $adress = $requestData->adress;
         $products = $requestData->products;
 
-       try {
-           $form = new OrderForm($name, $email, $phone, $adress, $products);
-           if ($form->validate()) {
-               try {
-                   $order = $this->service->create($form);
-               } catch (DomainException $e) {
-                   Yii::$app->errorHandler->logException($e);
-               }
+        $form = new OrderForm($name, $email, $phone, $adress, $products);
+        if ($form->validate()) {
+           try {
+               $this->service->create($form);
+               Yii::$app->getResponse()->setStatusCode(201);
+           } catch (\DomainException $e) {
+               throw new BadRequestHttpException($e->getMessage(), null, $e);
            }
-
-           return $requestData;
-
-       } catch (\DomainException $e) {
-           throw new BadRequestHttpException($e->getMessage(), null, $e);
-       }
+        }
 
     }
 
-
+    public function serializeItem(Order $order): array
+    {
+        return [
+            'id' => $order->id,
+            'client_name' => $order->client_name,
+            'email' => $order->email,
+            'phone' => $order->phone,
+            'adress' => $order->adress,
+            'products' => Json::decode($order->products),
+            'status' => [
+                'id' => $order->status,
+                'name' => ProcessHelper::processName($order->status),
+             ]
+        ];
+    }
 }

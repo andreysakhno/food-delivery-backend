@@ -10,9 +10,11 @@ return [
     'rules' => [
         '' => 'site/index',
         'cart' => 'site/cart',
+        'history' => 'site/history',
 
         'GET api/shops' => 'api/shop/index',
         'GET api/foods' => 'api/food/index',
-        'POST api/orders' => 'api/order/index',
+        'POST api/orders' => 'api/order/create',
+        'GET api/orders' => 'api/order/index',
     ],
 ];

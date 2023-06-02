@@ -72,7 +72,7 @@ class FoodController extends Controller
     {
         $shopIds = Yii::$app->request->get('shopIds');
 
-        if (is_null($shopIds)) {
+        if (empty($shopIds)) {
             $foods = $this->foods->getAll();
         } else {
             $shopIdsArr = explode(",", $shopIds);

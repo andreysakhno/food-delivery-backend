@@ -30,13 +30,12 @@ AppAsset::register($this);
             <div class="header__menu menu">
                 <nav class="menu__body">
                     <ul class="menu__list">
-                        <li class="menu__item active">
+                        <li class="menu__item <?= Yii::$app->controller->route === 'site/index' ?  'active' : '' ?>">
                             <a href="<?= Url::home(); ?>" class="menu__link">Магазин</a>
                         </li>
-                        <!--
-                        <li class="menu__item"><a href="history.html" class="menu__link">Історія замовлень</a></li>
-                        <li class="menu__item"><a href="coupones.html" class="menu__link">Купони</a></li>
-                        //-->
+                        <li class="menu__item <?= Yii::$app->controller->route === 'site/history' ?  'active' : '' ?>">
+                            <a href="<?=Url::to('history', true); ?>" class="menu__link">Історія замовлень</a>
+                        </li>
                     </ul>
                 </nav>
                 <button type="button" class="menu__icon icon-menu"><span></span></button>
