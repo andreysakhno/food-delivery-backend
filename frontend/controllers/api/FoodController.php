@@ -99,6 +99,7 @@ class FoodController extends Controller
             'shop' => [
                 'id' => $food->shop_id,
                 'title' => $food->shop->title,
+                'coords' => $food->shop->coords,
             ],
             'title' => $food->title,
             'price' => $food->price,
