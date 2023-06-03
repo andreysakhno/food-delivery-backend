@@ -725,12 +725,14 @@
         }
     }
     Loader.CALLBACK_NAME = "_dk_google_maps_loader_cb";
-    class Map {
+    class GoogleMap {
         #google;
         #map;
         #mainMarker;
         #autocomplete;
         #input;
+        #directionsService;
+        #directionsRenderer;
         #mapCnt;
         #markers;
         static get _CONFIGURATION() {
@@ -749,7 +751,7 @@
                     maxZoom: 22,
                     mapId: ""
                 },
-                mapsApiKey: "AIzaSyBgqOn618wGMaPpY2uZC3ODrMuUQ2he9R8",
+                mapsApiKey: "AIzaSyAOh0pu75uFzUHxNfikPcy4xwlnb5QTlTw",
                 capabilities: {
                     addressAutocompleteControl: true,
                     mapDisplayControl: true,
@@ -757,39 +759,110 @@
                 }
             };
         }
-        constructor(google, map, mainMarker, autocomplete, mapCnt, input) {
+        static get _mapOptions() {
+            return {
+                zoom: GoogleMap._CONFIGURATION.mapOptions.zoom,
+                center: {
+                    lat: GoogleMap._CONFIGURATION.mapOptions.center.lat,
+                    lng: GoogleMap._CONFIGURATION.mapOptions.center.lng
+                },
+                mapTypeControl: false,
+                fullscreenControl: GoogleMap._CONFIGURATION.mapOptions.fullscreenControl,
+                zoomControl: GoogleMap._CONFIGURATION.mapOptions.zoomControl,
+                streetViewControl: GoogleMap._CONFIGURATION.mapOptions.streetViewControl
+            };
+        }
+        constructor(google, map, mainMarker, autocomplete, directionsService, directionsRenderer, mapCnt, input) {
             this.#google = google;
             this.#map = map;
             this.#mainMarker = mainMarker;
             this.#autocomplete = autocomplete;
+            this.#directionsService = directionsService;
+            this.#directionsRenderer = directionsRenderer;
             this.#mapCnt = mapCnt;
             this.#input = input;
             this.#markers = [];
-            this._handlers();
+            this.hasRoute = false;
+            this._addHandlers();
         }
         static async initialize(mapContainer, autocompleteInput) {
             const options = {
                 libraries: [ "places" ]
             };
-            const loader = new Loader(Map._CONFIGURATION.mapsApiKey, options);
+            const loader = new Loader(GoogleMap._CONFIGURATION.mapsApiKey, options);
             const google = await loader.load();
-            const map = new google.maps.Map(mapContainer, {
-                zoom: Map._CONFIGURATION.mapOptions.zoom,
-                center: {
-                    lat: Map._CONFIGURATION.mapOptions.center.lat,
-                    lng: Map._CONFIGURATION.mapOptions.center.lng
-                },
-                mapTypeControl: false,
-                fullscreenControl: Map._CONFIGURATION.mapOptions.fullscreenControl,
-                zoomControl: Map._CONFIGURATION.mapOptions.zoomControl,
-                streetViewControl: Map._CONFIGURATION.mapOptions.streetViewControl
-            });
+            const map = new google.maps.Map(mapContainer, GoogleMap._mapOptions);
             const marker = new google.maps.Marker({
                 map,
                 draggable: false
             });
             const autocomplete = new google.maps.places.Autocomplete(autocompleteInput, {});
-            return new Map(google, map, marker, autocomplete, mapContainer, autocompleteInput);
+            const directionsService = new google.maps.DirectionsService;
+            const directionsRenderer = new google.maps.DirectionsRenderer({
+                map
+            });
+            return new GoogleMap(google, map, marker, autocomplete, directionsService, directionsRenderer, mapContainer, autocompleteInput);
+        }
+        async calculateAndDisplayRoute() {
+            if (this.#markers.length === 0) {
+                this._clearMap();
+                return;
+            }
+            let maxDistanceIndex = 0;
+            await this._getDistances().then((distances => {
+                if (!Array.isArray(distances) || distances.length === 0) return;
+                const maxDistance = Math.max(...distances);
+                maxDistanceIndex = distances.indexOf(maxDistance);
+            }));
+            const waypts = [];
+            this.#markers.forEach(((marker, index) => {
+                if (index !== maxDistanceIndex) waypts.push({
+                    location: marker.position,
+                    stopover: true
+                });
+            }));
+            this._hideMainMarker();
+            this._hideMarkers();
+            this.#directionsService.route({
+                origin: this.#markers[maxDistanceIndex].position,
+                destination: this.#mainMarker.position,
+                waypoints: waypts,
+                optimizeWaypoints: true,
+                avoidTolls: true,
+                avoidHighways: false,
+                travelMode: google.maps.TravelMode.DRIVING
+            }, ((response, status) => {
+                if (status == google.maps.DirectionsStatus.OK) {
+                    this.#directionsRenderer.setDirections(response);
+                    this.hasRoute = true;
+                    let distance = 0;
+                    let duration = 0;
+                    response.routes[0].legs.forEach((leg => {
+                        distance += leg.distance.value;
+                        duration += leg.duration.value;
+                    }));
+                    this._renderRouteInfo(distance, duration);
+                } else window.alert("Directions request failed due to " + status);
+            }));
+        }
+        async _getDistances() {
+            try {
+                const requests = this.#markers.map((marker => new Promise(((resolve, reject) => {
+                    this.#directionsService.route({
+                        origin: this.#mainMarker.position,
+                        destination: marker.position,
+                        avoidTolls: false,
+                        avoidHighways: false,
+                        travelMode: google.maps.TravelMode.DRIVING
+                    }, ((response, status) => {
+                        if (status == google.maps.DirectionsStatus.OK) resolve(response); else reject(status);
+                    }));
+                }))));
+                const responses = await Promise.all(requests);
+                return await Promise.all(responses.map((response => response.routes[0].legs[0].distance.value)));
+            } catch (error) {
+                console.log(error);
+            }
         }
         addMarkers(elements) {
             elements.forEach(((element, index) => {
@@ -808,11 +881,18 @@
             }));
         }
         removeMarkers() {
-            this.#markers.forEach((item => {
-                item.setMap(null);
-            }));
+            this._hideMarkers();
+            this.#markers = [];
         }
-        _handlers() {
+        hasMainMarker() {
+            return this.#mainMarker.hasOwnProperty("position");
+        }
+        clearMap() {
+            this.#directionsRenderer.setMap(null);
+            this.#directionsRenderer = null;
+            this._renderRouteInfo(0, 0);
+        }
+        _addHandlers() {
             this.#autocomplete.addListener("place_changed", (() => {
                 this.#mainMarker.setVisible(false);
                 const place = this.#autocomplete.getPlace();
@@ -820,7 +900,8 @@
                     window.alert("No details available for input: '" + place.name + "'");
                     return;
                 }
-                this._pinMarker(place.geometry.location);
+                this._pinMainMarker(place.geometry.location);
+                if (this.#markers.length > 0) this.calculateAndDisplayRoute();
             }));
             const geocoder = new this.#google.maps.Geocoder;
             this.#google.maps.event.addListener(this.#map, "click", (event => {
@@ -830,16 +911,31 @@
                     latLng: location
                 }, ((results, status) => {
                     if (status == this.#google.maps.GeocoderStatus.OK) if (results[0]) {
-                        this._pinMarker(location);
+                        this._pinMainMarker(location);
                         this.#input.value = results[0].formatted_address;
+                        if (this.#markers.length > 0) this.calculateAndDisplayRoute();
                     }
                 }));
             }));
         }
-        _pinMarker(location) {
+        _pinMainMarker(location) {
             this.#map.setCenter(location);
             this.#mainMarker.setPosition(location);
             this.#mainMarker.setVisible(true);
+        }
+        _hideMainMarker() {
+            this.#mainMarker.setVisible(false);
+        }
+        _hideMarkers() {
+            this.#markers.forEach((item => {
+                item.setMap(null);
+            }));
+        }
+        _renderRouteInfo(distance, duration) {
+            const distanceElement = document.querySelector(".route-info__distance-value");
+            const durationElement = document.querySelector(".route-info__duration-value");
+            distanceElement.textContent = `${Math.floor(distance / 1e3)} км`;
+            durationElement.textContent = `${Math.floor(duration / 60)} хв`;
         }
     }
     function initCart() {
@@ -848,7 +944,7 @@
         const cartIcon = document.querySelector(".header__cart");
         const adressInput = document.getElementById("adress");
         const mapContainer = document.getElementById("map");
-        Map.initialize(mapContainer, adressInput).then((map => {
+        GoogleMap.initialize(mapContainer, adressInput).then((map => {
             const cart = new Cart;
             if (Object.keys(cart.products).length === 0) {
                 orderContainer.textContent = "Корзина порожня";
@@ -857,10 +953,8 @@
             } else {
                 cartIcon.textContent = cart.products.length;
                 map.addMarkers(cart.getShops());
-                for (const key in cart.products) {
-                    orderContainer.append(renderProduct(cart.products[key]));
-                    totalSum.textContent = cart.getTotalSum().toFixed(2);
-                }
+                for (const key in cart.products) orderContainer.append(renderProduct(cart.products[key]));
+                totalSum.textContent = cart.getTotalSum().toFixed(2);
             }
             orderContainer.addEventListener("click", (e => {
                 const el = e.target;
@@ -869,9 +963,10 @@
                 const productId = +closestCard.dataset.productId;
                 const priceValue = closestCard.querySelectorAll(cardClass + "__price-value")[1];
                 if (el.closest(cardClass + "__remove-btn")) {
-                    map.removeMarkers();
                     cart.remove(productId);
+                    map.removeMarkers();
                     map.addMarkers(cart.getShops());
+                    if (map.hasRoute) map.calculateAndDisplayRoute();
                     closestCard.remove();
                     totalSum.textContent = cart.getTotalSum().toFixed(2);
                     cartIcon.textContent = cartIcon.textContent - 1;
@@ -903,6 +998,7 @@
                     cart.clear();
                     orderContainer.textContent = "Корзина пуста";
                     cartIcon.textContent = "";
+                    map.clearMap();
                     postData("orders", requestData).then((() => {
                         FlashMessage.success("Замовлення відправлено!!!");
                     }));

@@ -21,22 +21,32 @@ $this->registerMetaTag(['name' =>'keywords', 'content' => ""]);
                     <div class="form-personal__inputs">
                         <div class="form-personal__item">
                             <label for="name" class="form-personal__label">І’мя</label>
-                            <input class="form-personal__input" autocomplete="off" type="text" name="form[name]" id="name" data-validate data-required data-error="Заповніть обов’язкове поле" placeholder="Введіть ваше і’мя">
+                            <input class="form-personal__input" autocomplete="off" type="text" name="form[name]" id="name" data-validate data-required data-error="Заповніть обов’язкове поле" placeholder="Введіть ваше і’мя" >
                         </div>
                         <div class="form-personal__item">
                             <label for="email" class="form-personal__label">Електронна адреса</label>
-                            <input class="form-personal__input" autocomplete="off" type="text" name="form[email]" id="email" data-validate data-required="email" data-error="Невірна електронна адреса" placeholder="Введіть вашу електронну адресу">
+                            <input class="form-personal__input" autocomplete="off" type="text" name="form[email]" id="email" data-validate data-required="email" data-error="Невірна електронна адреса" placeholder="Введіть вашу електронну адресу" >
                         </div>
                         <div class="form-personal__item">
                             <label for="phone" class="form-personal__label">Телефон</label>
-                            <input class="form-personal__input" autocomplete="off" type="text" name="form[phone]" id="phone" data-validate data-required data-error="Заповніть обов’язкове поле" placeholder="Введіть ваш номер телефону">
+                            <input class="form-personal__input" autocomplete="off" type="text" name="form[phone]" id="phone" data-validate data-required data-error="Заповніть обов’язкове поле" placeholder="Введіть ваш номер телефону" >
                         </div>
                         <div class="form-personal__item">
                             <label for="adress" class="form-personal__label">Адреса</label>
-                            <input class="form-personal__input" autocomplete="off" type="text" name="form[adress]" id="adress" data-validate data-required data-error="Заповніть обов’язкове поле" placeholder="Введіть вашу адресу">
-                            <div class="form-personal__map-container">
-                                <div class="form-personal__map" id="map"></div>
+                            <input class="form-personal__input" autocomplete="off" type="text" name="form[adress]" id="adress" data-validate data-required data-error="Заповніть обов’язкове поле" placeholder="Введіть вашу адресу" >
+                        </div>
+                        <div class="form-personal__item route-info">
+                            <div class="route-info__distance">
+                                <span class="route-info__distance-lable">Відстань:</span>
+                                <span class="route-info__distance-value">0 км</span>
                             </div>
+                            <div class="route-info__duration">
+                                <span class="route-info__duration-lable">Час в дорозі:</span>
+                                <span class="route-info__duration-value">0 хв</span>
+                            </div>
+                        </div>
+                        <div class="form-personal__map-container">
+                            <div class="form-personal__map" id="map"></div>
                         </div>
                     </div>
 
@@ -46,7 +56,7 @@ $this->registerMetaTag(['name' =>'keywords', 'content' => ""]);
 
                     <div class="form-order__list"></div>
                 </div>
-                <div class="cart-main__submit form-submit">
+                <div class="cart-main__submit form-submit" >
                     <div class="form-submit_sum">
                         <div class="form-submit_sum-lable">Cума замовлення:</div>
                         <div class="form-submit_sum-totlal">
